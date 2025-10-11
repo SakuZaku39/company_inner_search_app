@@ -30,7 +30,7 @@ load_dotenv()
 ############################################################
 
 def create_csv_documents():
-    """CSVデータをRAG用のドキュメント形式に変換"""
+    """CSVデータをRAG用のドキュメント形式に変換（Markdownテーブル統合版）"""
     from langchain.schema import Document
     
     try:
@@ -41,45 +41,44 @@ def create_csv_documents():
         df = pd.read_csv(csv_path, encoding='utf-8')
         documents = []
         
-        # 各従業員をドキュメント化
-        for index, row in df.iterrows():
-            content = f"""従業員情報:
-氏名: {row['氏名（フルネーム）']}
-部署: {row['部署']}
-役職: {row['役職']}
-従業員区分: {row['従業員区分']}
-スキルセット: {row['スキルセット']}
-保有資格: {row['保有資格']}
-年齢: {row['年齢']}歳
-入社日: {row['入社日']}"""
-            
-            # メタデータに部署情報などを含める
-            metadata = {
+        # ✅ 方法1: 全社員を1つの統合Markdownテーブルとして格納
+        all_employees_content = f"""# 全社員一覧（社員名簿）
+
+{df.to_markdown(index=False)}
+
+この表には全{len(df)}名の社員情報が含まれています。
+各部署の詳細な検索や、特定の条件での絞り込みが可能です。"""
+
+        documents.append(Document(
+            page_content=all_employees_content,
+            metadata={
                 "source": "社員名簿.csv",
-                "type": "employee_data",
-                "department": row['部署'],
-                "name": row['氏名（フルネーム）'],
-                "role": row['役職']
+                "type": "employee_master_table",
+                "total_employees": len(df)
             }
-            
-            documents.append(Document(page_content=content, metadata=metadata))
+        ))
         
-        # 部署別サマリーも作成
+        # ✅ 方法2: 部署別のMarkdownテーブルも作成（詳細検索用）
         for dept in df['部署'].unique():
             dept_df = df[df['部署'] == dept]
-            summary_content = f"""{dept}の概要:
-所属人数: {len(dept_df)}名
+            dept_content = f"""# {dept}の社員一覧
+
+{dept_df.to_markdown(index=False)}
+
+{dept}には{len(dept_df)}名の社員が所属しています。
+役職構成: {dict(dept_df['役職'].value_counts())}
 主な役職: {', '.join(dept_df['役職'].unique())}
-従業員区分: {', '.join(dept_df['従業員区分'].unique())}
-            # 代表的なスキル: {', '.join(list(set([skill for skills in dept_df['スキルセット'].dropna().str.split(', ') for skill in skills]))[:10])}"""
+従業員区分: {', '.join(dept_df['従業員区分'].unique())}"""
             
-            metadata = {
-                "source": f"{dept}_概要",
-                "type": "department_summary", 
-                "department": dept
-            }
-            
-            documents.append(Document(page_content=summary_content, metadata=metadata))
+            documents.append(Document(
+                page_content=dept_content,
+                metadata={
+                    "source": f"社員名簿.csv",
+                    "type": "department_table", 
+                    "department": dept,
+                    "employee_count": len(dept_df)
+                }
+            ))
         
         return documents
         
@@ -249,7 +248,12 @@ def get_llm_response(chat_message):
             
             system_prompt = """あなたは社内情報検索アシスタントです。
 提供された情報を基に、ユーザーの質問に正確で有用な回答を提供してください。
-従業員情報がある場合は表形式で整理し、文書情報がある場合は要点をまとめてください。"""
+
+**重要な出力ルール**:
+1. 従業員情報や一覧データがある場合は、**必ずMarkdown形式のテーブル**で出力してください
+2. 複数の従業員情報がある場合は、全員分をテーブルに含めてください（1人だけではダメ）
+3. テーブル形式: | 列名1 | 列名2 | 列名3 |
+4. 従業員以外の情報は要点をまとめて回答してください"""
             
             messages = [
                 SystemMessage(content=system_prompt),
