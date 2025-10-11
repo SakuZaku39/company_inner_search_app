@@ -10,11 +10,12 @@ python-dotenv==1.0.1
 # AI/ML core libraries
 openai==1.60.2
 langchain==0.3.27
-langchain-community==0.3.31
-langchain-core==0.3.79
-langchain-experimental==0.3.24
-langchain-openai==0.3.35
-langchain-text-splitters==0.3.11
+langchain-community==0.3.27
+langchain-core==0.3.27
+langchain-openai==0.3.27
+langchain-text-splitters==0.3.27
+# langchain-experimental を GitHub から直接取得
+git+https://github.com/langchain-ai/langchain.git@v0.3.27#subdirectory=libs/experimental
 
 # Vector database
 chromadb==1.1.1
