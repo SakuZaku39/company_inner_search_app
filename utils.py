@@ -88,7 +88,7 @@ def create_csv_documents():
         return []
 
 def format_search_results(retrieved_docs, query):
-    """検索結果を動的にフォーマット"""
+    """検索結果を動的にフォーマット - ファイルパスとページ数を含む表示"""
     if not retrieved_docs:
         return "関連する情報が見つかりませんでした。"
     
@@ -115,6 +115,10 @@ def format_search_results(retrieved_docs, query):
         if table_data:
             result += "| 氏名 | 部署 | 役職 |\n|------|------|------|\n"
             result += "\n".join(table_data) + "\n\n"
+        
+        # 従業員データのソース表示
+        result += "**データソース:**\n"
+        result += f"📊 data/社員について/社員名簿.csv\n\n"
     
     # 部署概要がある場合
     if dept_summary_docs:
@@ -122,12 +126,32 @@ def format_search_results(retrieved_docs, query):
         for doc in dept_summary_docs:
             result += doc.page_content + "\n\n"
     
-    # 他の文書情報
+    # 他の文書ファイル情報 - ファイルパスとページ数を表示
     if other_docs:
-        result += "**関連文書情報:**\n\n"
-        for doc in other_docs[:3]:  # 最大3件
-            result += f"📄 {doc.metadata.get('source', '不明なソース')}\n"
-            result += doc.page_content[:200] + "...\n\n"
+        result += "**入力内容に関する情報は、以下のファイルに含まれている可能性があります:**\n\n"
+        
+        # 重複チェック用
+        displayed_sources = set()
+        
+        for doc in other_docs[:5]:  # 最大5件
+            source = doc.metadata.get('source', '不明なソース')
+            page = doc.metadata.get('page')
+            
+            # 重複を避ける
+            source_key = f"{source}_{page}" if page else source
+            if source_key in displayed_sources:
+                continue
+            displayed_sources.add(source_key)
+            
+            # ファイルパス表示
+            if source.endswith('.pdf') and page:
+                file_display = f"📄 {source} (ページNo.{page})"
+            else:
+                file_display = f"📄 {source}"
+            
+            result += f"{file_display}\n"
+        
+        result += "\n**その他、ファイルありかの候補を提示します:**\n\n"
     
     return result
 
@@ -146,6 +170,13 @@ def get_source_icon(source):
         icon = ct.DOC_SOURCE_ICON
     return icon
 
+def format_pdf_reference(file_path, page_number=None):
+    """PDFファイルのページ数を含む参照形式を生成"""
+    if file_path.endswith('.pdf') and page_number:
+        return f"{file_path} (ページNo.{page_number})"
+    else:
+        return file_path
+
 def build_error_message(error_message):
     """エラーメッセージを整形して返す"""
     return f"{ct.ERROR_ICON} **エラーが発生しました**\n\n{error_message}\n\n{ct.COMMON_ERROR_MESSAGE}"
@@ -159,10 +190,26 @@ def get_llm_response(chat_message):
         # 真のRAG処理: 全データを統合検索
         llm = ChatOpenAI(model_name=ct.MODEL, temperature=ct.TEMPERATURE)
         
-        # RAGリトリーバーの取得
+        # RAGリトリーバーの取得（緊急修正: フォールバック強化）
+        retriever = None
         try:
-            retriever = st.session_state.retriever if hasattr(st, 'session_state') and hasattr(st.session_state, 'retriever') else None
-        except Exception:
+            # Streamlit環境での取得を試行
+            if hasattr(st, 'session_state') and hasattr(st.session_state, 'retriever'):
+                retriever = st.session_state.retriever
+            
+            # retrieverがNoneの場合、緊急初期化を試行
+            if retriever is None:
+                print("⚠️ retriever が None です。緊急初期化を試行...")
+                from initialize_ultra_lite import initialize_retriever
+                retriever = initialize_retriever()
+                
+                # 初期化成功時はsession_stateに保存
+                if retriever and hasattr(st, 'session_state'):
+                    st.session_state.retriever = retriever
+                    print("✅ retriever 緊急初期化成功")
+                    
+        except Exception as e:
+            print(f"Retriever取得エラー: {e}")
             retriever = None
         
         if retriever is None:
@@ -186,13 +233,13 @@ def get_llm_response(chat_message):
                 pass
             
             return {
-                "answer": response.content + "\n\n⚠️ 文書検索機能が利用できないため、一般的な回答を提供しています。",
+                "answer": response.content + "\n\n⚠️ **緊急モード**: 文書検索機能が一時的に利用できません。管理者に連絡してください。",
                 "context": []
             }
         
         # RAG検索実行
         try:
-            retrieved_docs = retriever.get_relevant_documents(chat_message)
+            retrieved_docs = retriever.invoke(chat_message)
             
             # 結果の動的フォーマット
             formatted_results = format_search_results(retrieved_docs, chat_message)
@@ -220,7 +267,8 @@ def get_llm_response(chat_message):
             
             return {
                 "answer": response.content,
-                "context": retrieved_docs
+                "context": retrieved_docs,
+                "mode": ct.ANSWER_MODE_1 if hasattr(st, 'session_state') and st.session_state.get("mode") == ct.ANSWER_MODE_1 else ct.ANSWER_MODE_2
             }
             
         except Exception as rag_error:

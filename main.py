@@ -128,24 +128,29 @@ if chat_message:
     # ==========================================
     with st.chat_message("assistant"):
         try:
-            # 軽量版レスポンス処理（エラー耐性強化）
-            with st.chat_message("assistant"):
-                if isinstance(llm_response, dict) and "answer" in llm_response:
-                    # 新しい軽量版レスポンス形式
-                    st.markdown(llm_response["answer"])
-                    content = llm_response["answer"]
-                elif isinstance(llm_response, str):
-                    # 文字列レスポンス
-                    st.markdown(llm_response)
-                    content = llm_response
-                else:
-                    # 不明な形式の場合
-                    error_msg = "⚠️ 回答表示に失敗しました。"
-                    st.error(error_msg)
-                    content = error_msg
+            # 軽量版レスポンス処理（RAGファイル表示対応）
+            if isinstance(llm_response, dict) and "answer" in llm_response:
+                # 新しい軽量版レスポンス形式
+                st.markdown(llm_response["answer"])
+                
+                # 社内文書検索モードの場合、ファイル情報を表示
+                if st.session_state.get("mode") == ct.ANSWER_MODE_1 and "context" in llm_response and llm_response["context"]:
+                    cn.display_file_sources(llm_response["context"])
+                
+                content = llm_response  # 辞書全体を保存
+            elif isinstance(llm_response, str):
+                # 文字列レスポンス
+                st.markdown(llm_response)
+                content = llm_response
+            else:
+                # 不明な形式の場合
+                error_msg = "⚠️ 回答表示に失敗しました。"
+                st.error(error_msg)
+                content = error_msg
             
             # AIメッセージのログ出力
-            logger.info({"message": content, "application_mode": st.session_state.mode})
+            response_text = llm_response.get("answer", str(llm_response)) if isinstance(llm_response, dict) else str(llm_response)
+            logger.info({"message": response_text, "application_mode": st.session_state.mode})
         except Exception as e:
             # エラーログの出力
             logger.error(f"{ct.DISP_ANSWER_ERROR_MESSAGE}\n{e}")

@@ -90,7 +90,7 @@ def display_initial_ai_message():
 
 def display_conversation_log():
     """
-    会話ログの一覧表示（エラー耐性強化版）
+    会話ログの一覧表示（エラー耐性強化版 + RAGファイル表示対応）
     """
     # 会話ログのループ処理
     for message in st.session_state.messages:
@@ -110,10 +110,14 @@ def display_conversation_log():
                     # シンプルな文字列レスポンスの場合
                     if isinstance(content, str):
                         st.markdown(content)
-                    # 辞書形式のレスポンスの場合
+                    # 辞書形式のレスポンスの場合（RAG対応）
                     elif isinstance(content, dict):
                         if "answer" in content:
                             st.markdown(content["answer"])
+                            
+                            # 社内文書検索モードの場合、ファイル情報を表示
+                            if "context" in content and content["context"]:
+                                display_file_sources(content["context"])
                         else:
                             st.markdown(str(content))
                     else:
@@ -122,6 +126,86 @@ def display_conversation_log():
             # 表示エラーが発生した場合のフォールバック
             st.error(f"⚠️ メッセージの表示中にエラーが発生しました: {str(display_error)}")
 
+
+def display_file_sources(context_docs):
+    """
+    RAGコンテキストからファイルソースを表示
+    """
+    if not context_docs:
+        return
+    
+    # 区切り線の表示
+    st.divider()
+    
+    # メインファイル表示（最も関連性の高いファイル）
+    main_doc = context_docs[0] if context_docs else None
+    if main_doc and main_doc.metadata.get("type") not in ["employee_data", "department_summary"]:
+        st.markdown("**入力内容に関する情報は、以下のファイルに含まれている可能性があります。**")
+        
+        source = main_doc.metadata.get('source', '不明なソース')
+        page = main_doc.metadata.get('page')
+        icon = utils.get_source_icon(source)
+        
+        if source.endswith('.pdf') and page:
+            file_display = f"{source} (ページNo.{page})"
+        else:
+            file_display = source
+            
+        st.success(file_display, icon=icon)
+
+    # サブファイルがある場合に表示
+    if sub_files:
+        st.markdown("**その他、ファイルありかの候補を提示します。**")
+        for file_info in sub_files[:3]:  # 最大3件
+            icon = utils.get_source_icon(file_info["source"])
+            st.info(file_info["display"], icon=icon)
+        # ドキュメントが2件以上検索できた場合（サブドキュメントが存在する場合）のみ、サブドキュメントのありかを一覧表示
+        # 「context」内のリストの2番目以降をスライスで参照（マジックナンバー対策: 開始インデックスを定数化）
+        for document in llm_response["context"][ct.SUB_DOCUMENTS_START_INDEX:]:
+            # ドキュメントのファイルパスを取得
+            sub_file_path = document.metadata["source"]
+
+            # メインドキュメントのファイルパスと重複している場合、処理をスキップ（表示しない）
+            if sub_file_path == main_file_path:
+                continue
+            
+            # 同じファイル内の異なる箇所を参照した場合、2件目以降のファイルパスに重複が発生する可能性があるため、重複を除去
+            if sub_file_path in duplicate_check_list:
+                continue
+
+            # 重複チェック用のリストにファイルパスを順次追加
+            duplicate_check_list.append(sub_file_path)
+            
+            # ページ番号が取得できない場合のための分岐処理
+            if "page" in document.metadata:
+                # ページ番号を取得
+                sub_page_number = document.metadata["page"]
+                # 「サブドキュメントのファイルパス」と「ページ番号」の辞書を作成
+                sub_choice = {"source": sub_file_path, "page_number": sub_page_number}
+            else:
+                # 「サブドキュメントのファイルパス」の辞書を作成
+                sub_choice = {"source": sub_file_path}
+            
+            # 後ほど一覧表示するため、サブドキュメントに関する情報を順次リストに追加
+            sub_choices.append(sub_choice)
+        
+        # サブドキュメントが存在する場合のみの処理
+        if sub_choices:
+            # 補足メッセージの表示
+            sub_message = "その他、ファイルありかの候補を提示します。"
+            st.markdown(sub_message)
+
+            # サブドキュメントに対してのループ処理
+            for sub_choice in sub_choices:
+                # 参照元のありかに応じて、適したアイコンを取得
+                icon = utils.get_source_icon(sub_choice['source'])
+                # ページ番号が取得できない場合のための分岐処理
+                if "page_number" in sub_choice:
+                    # 「サブドキュメントのファイルパス」と「ページ番号」を表示
+                    st.info(f"{sub_choice['source']}", icon=icon)
+                else:
+                    # 「サブドキュメントのファイルパス」を表示
+                    st.info(f"{sub_choice['source']}", icon=icon)
 
 def display_conversation_log_legacy():
     """
