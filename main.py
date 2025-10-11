@@ -128,19 +128,21 @@ if chat_message:
     # ==========================================
     with st.chat_message("assistant"):
         try:
-            # ==========================================
-            # モードが「社内文書検索」の場合
-            # ==========================================
-            if st.session_state.mode == ct.ANSWER_MODE_1:
-                # 入力内容と関連性が高い社内文書のありかを表示
-                content = cn.display_search_llm_response(llm_response)
-
-            # ==========================================
-            # モードが「社内問い合わせ」の場合
-            # ==========================================
-            elif st.session_state.mode == ct.ANSWER_MODE_2:
-                # 入力に対しての回答と、参照した文書のありかを表示
-                content = cn.display_contact_llm_response(llm_response)
+            # 軽量版レスポンス処理（エラー耐性強化）
+            with st.chat_message("assistant"):
+                if isinstance(llm_response, dict) and "answer" in llm_response:
+                    # 新しい軽量版レスポンス形式
+                    st.markdown(llm_response["answer"])
+                    content = llm_response["answer"]
+                elif isinstance(llm_response, str):
+                    # 文字列レスポンス
+                    st.markdown(llm_response)
+                    content = llm_response
+                else:
+                    # 不明な形式の場合
+                    error_msg = "⚠️ 回答表示に失敗しました。"
+                    st.error(error_msg)
+                    content = error_msg
             
             # AIメッセージのログ出力
             logger.info({"message": content, "application_mode": st.session_state.mode})
@@ -148,9 +150,9 @@ if chat_message:
             # エラーログの出力
             logger.error(f"{ct.DISP_ANSWER_ERROR_MESSAGE}\n{e}")
             # エラーメッセージの画面表示
-            st.error(utils.build_error_message(ct.DISP_ANSWER_ERROR_MESSAGE), icon=ct.ERROR_ICON)
-            # 後続の処理を中断
-            st.stop()
+            error_msg = f"⚠️ 回答表示に失敗しました。\n\nこのエラーが繰り返し発生する場合は、管理者にお問い合わせください。\n\n詳細: {str(e)}"
+            st.error(error_msg, icon=ct.ERROR_ICON)
+            content = error_msg
 
     # ==========================================
     # 7-4. 会話ログへの追加

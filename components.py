@@ -90,7 +90,42 @@ def display_initial_ai_message():
 
 def display_conversation_log():
     """
-    会話ログの一覧表示
+    会話ログの一覧表示（エラー耐性強化版）
+    """
+    # 会話ログのループ処理
+    for message in st.session_state.messages:
+        try:
+            # 「message」辞書の中の「role」キーには「user」か「assistant」が入っている
+            with st.chat_message(message["role"]):
+
+                # ユーザー入力値の場合、そのままテキストを表示するだけ
+                if message["role"] == "user":
+                    st.markdown(message["content"])
+                
+                # LLMからの回答の場合（安全な表示）
+                else:
+                    # 新しい軽量版レスポンス形式に対応
+                    content = message.get("content", {})
+                    
+                    # シンプルな文字列レスポンスの場合
+                    if isinstance(content, str):
+                        st.markdown(content)
+                    # 辞書形式のレスポンスの場合
+                    elif isinstance(content, dict):
+                        if "answer" in content:
+                            st.markdown(content["answer"])
+                        else:
+                            st.markdown(str(content))
+                    else:
+                        st.markdown("回答を表示できませんでした。")
+        except Exception as display_error:
+            # 表示エラーが発生した場合のフォールバック
+            st.error(f"⚠️ メッセージの表示中にエラーが発生しました: {str(display_error)}")
+
+
+def display_conversation_log_legacy():
+    """
+    従来の会話ログ表示（複雑なRAG対応版）- 現在は使用しない
     """
     # 会話ログのループ処理
     for message in st.session_state.messages:
@@ -296,8 +331,8 @@ def display_contact_llm_response(llm_response):
         st.divider()
 
         # 補足メッセージを表示
-        # message = "情報源"
-        # st.markdown(f"##### {message}")
+        info_message = "情報源"
+        # st.markdown(f"##### {info_message}")
 
         # 参照元のファイルパスの一覧を格納するためのリストを用意
         file_path_list = []
@@ -335,7 +370,7 @@ def display_contact_llm_response(llm_response):
     content["answer"] = llm_response["answer"]
     # 参照元のドキュメントが取得できた場合のみ
     if llm_response["answer"] != ct.INQUIRY_NO_MATCH_ANSWER:
-        content["message"] = message
+        content["message"] = info_message
         content["file_info_list"] = file_info_list
 
     return content

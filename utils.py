@@ -13,7 +13,7 @@ import pandas as pd
 import re
 from dotenv import load_dotenv
 import streamlit as st
-from langchain.schema import HumanMessage
+from langchain.schema import HumanMessage, SystemMessage, AIMessage
 from langchain_openai import ChatOpenAI
 import constants as ct
 from typing import Optional
@@ -157,44 +157,78 @@ def get_llm_response(chat_message):
             return employee_response
         
         # 軽量版LLM処理（RAG機能なし）
-        llm = ChatOpenAI(model_name=ct.MODEL, temperature=ct.TEMPERATURE)
-
-        # シンプルなプロンプト構築
-        system_prompt = ct.SYSTEM_PROMPT_INQUIRY
-        
         try:
-            chat_history = st.session_state.chat_history if hasattr(st, 'session_state') and hasattr(st.session_state, 'chat_history') else []
-        except Exception:
-            chat_history = []
+            llm = ChatOpenAI(model_name=ct.MODEL, temperature=ct.TEMPERATURE)
 
-        # 会話履歴を含めたメッセージ構築
-        messages = [{"role": "system", "content": system_prompt}]
-        
-        # 過去の会話履歴を追加（最新の5つまで）
-        if chat_history:
-            for i, msg in enumerate(chat_history[-10:]):  # 最新10件
-                if i % 2 == 0:  # 偶数番目はユーザーメッセージ
-                    messages.append({"role": "user", "content": str(msg.content) if hasattr(msg, 'content') else str(msg)})
-                else:  # 奇数番目はアシスタントメッセージ
-                    messages.append({"role": "assistant", "content": str(msg)})
-        
-        # 現在のメッセージを追加
-        messages.append({"role": "user", "content": chat_message})
+            # モードに応じたプロンプト選択
+            try:
+                current_mode = st.session_state.mode if hasattr(st, 'session_state') and hasattr(st.session_state, 'mode') else ct.ANSWER_MODE_2
+            except Exception:
+                current_mode = ct.ANSWER_MODE_2
 
-        # LLM応答取得
-        response = llm.invoke(messages)
+            if current_mode == ct.ANSWER_MODE_1:
+                system_prompt = ct.SYSTEM_PROMPT_DOC_SEARCH
+            else:
+                system_prompt = ct.SYSTEM_PROMPT_INQUIRY
+            
+            # LangChain互換のメッセージフォーマットを使用
+            from langchain.schema import SystemMessage, HumanMessage as LCHumanMessage
+            
+            messages = [SystemMessage(content=system_prompt)]
+            
+            # 会話履歴を取得
+            try:
+                chat_history = st.session_state.chat_history if hasattr(st, 'session_state') and hasattr(st.session_state, 'chat_history') else []
+            except Exception:
+                chat_history = []
 
-        # LLMレスポンスを会話履歴に追加
-        try:
-            if hasattr(st, 'session_state') and hasattr(st.session_state, 'chat_history'):
-                st.session_state.chat_history.extend([HumanMessage(content=chat_message), response.content])
-        except Exception:
-            pass
+            # 過去の会話履歴を追加（最新の4つまで）
+            if chat_history:
+                for i, msg in enumerate(chat_history[-8:]):  # 最新8件（ユーザー4+アシスタント4）
+                    if i % 2 == 0:  # 偶数番目はユーザーメッセージ
+                        content = str(msg.content) if hasattr(msg, 'content') else str(msg)
+                        messages.append(LCHumanMessage(content=content))
+                    else:  # 奇数番目はアシスタントメッセージ
+                        from langchain.schema import AIMessage
+                        content = str(msg)
+                        messages.append(AIMessage(content=content))
+            
+            # 現在のメッセージを追加
+            messages.append(LCHumanMessage(content=chat_message))
 
-        return {
-            "answer": response.content,
-            "context": []
-        }
+            # LLM応答取得
+            response = llm.invoke(messages)
+
+            # LLMレスポンスを会話履歴に追加
+            try:
+                if hasattr(st, 'session_state') and hasattr(st.session_state, 'chat_history'):
+                    st.session_state.chat_history.extend([HumanMessage(content=chat_message), response.content])
+            except Exception:
+                pass
+
+            return {
+                "answer": response.content,
+                "context": []
+            }
+            
+        except Exception as llm_error:
+            # LLM処理でエラーが発生した場合の詳細エラーハンドリング
+            error_details = str(llm_error)
+            
+            # よくあるエラーの場合は、より具体的な対処法を提示
+            if "rate limit" in error_details.lower():
+                fallback_message = "⚠️ OpenAI APIの利用制限に達しました。しばらく時間をおいてから再度お試しください。"
+            elif "authentication" in error_details.lower() or "api key" in error_details.lower():
+                fallback_message = "⚠️ OpenAI APIキーの認証に失敗しました。管理者にお問い合わせください。"
+            elif "connection" in error_details.lower() or "network" in error_details.lower():
+                fallback_message = "⚠️ ネットワーク接続に問題があります。インターネット接続を確認してください。"
+            else:
+                fallback_message = f"⚠️ AI応答の生成中にエラーが発生しました。\n\n詳細: {error_details}\n\n従業員情報の検索は引き続き利用可能です。"
+            
+            return {
+                "answer": fallback_message,
+                "context": []
+            }
 
     except Exception as e:
         error_message = f"LLM応答生成中にエラーが発生しました: {str(e)}"
