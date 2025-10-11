@@ -76,6 +76,25 @@ def initialize_session_state():
 
 def initialize_retriever():
     """
-    ダミー関数 - ベクトルストアは初期化しない
+    RAG統合版リトリーバー初期化（CSV統合）
     """
-    return None
+    try:
+        # CSVデータをドキュメント化
+        from utils import create_csv_documents
+        csv_docs = create_csv_documents()
+        
+        if csv_docs:
+            # 簡易RAG: CSVドキュメントのみでベクトルストア作成
+            from langchain_openai import OpenAIEmbeddings
+            from langchain.vectorstores import FAISS
+            
+            embeddings = OpenAIEmbeddings()
+            vectorstore = FAISS.from_documents(csv_docs, embeddings)
+            return vectorstore.as_retriever(search_kwargs={"k": 5})
+        else:
+            return None
+            
+    except Exception as e:
+        # 初期化失敗時はNoneを返す
+        print(f"RAG初期化失敗: {e}")
+        return None
