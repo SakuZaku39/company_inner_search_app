@@ -1,0 +1,17 @@
+# Streamlit Cloud 超軽量版 - 確実に動作する最小構成
+streamlit
+python-dotenv
+openai
+langchain
+langchain-community
+langchain-core
+langchain-openai
+langchain-text-splitters
+pandas
+numpy
+tabulate
+requests
+PyMuPDF
+python-docx
+docx2txt
+beautifulsoup4

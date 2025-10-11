@@ -187,15 +187,29 @@ def get_llm_response(chat_message):
             ("human", "{input}")
         ])
 
-        # リトリーバーを取得
+        # リトリーバーを取得（軽量版：ベクトルストア問題を回避）
         try:
             retriever = st.session_state.retriever if hasattr(st, 'session_state') and hasattr(st.session_state, 'retriever') else None
         except Exception:
             retriever = None
 
         if retriever is None:
-            from initialize import initialize_retriever
-            retriever = initialize_retriever()
+            try:
+                from initialize import initialize_retriever
+                retriever = initialize_retriever()
+            except Exception:
+                # ベクトルストア初期化に失敗した場合は基本的なLLM応答のみ
+                return {
+                    "answer": "申し訳ございませんが、現在文書検索機能が利用できません。従業員情報の検索は可能です。",
+                    "context": []
+                }
+
+        if retriever is None:
+            # リトリーバーなしの場合の基本応答
+            return {
+                "answer": "申し訳ございませんが、現在文書検索機能が利用できません。従業員情報の検索は可能です。",
+                "context": []
+            }
 
         history_aware_retriever = create_history_aware_retriever(llm, retriever, question_generator_prompt)
 
