@@ -13,11 +13,8 @@ import pandas as pd
 import re
 from dotenv import load_dotenv
 import streamlit as st
-from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain.schema import HumanMessage
 from langchain_openai import ChatOpenAI
-from langchain.chains import create_history_aware_retriever, create_retrieval_chain
-from langchain.chains.combine_documents import create_stuff_documents_chain
 import constants as ct
 from typing import Optional
 from tabulate import tabulate
@@ -159,80 +156,45 @@ def get_llm_response(chat_message):
                 pass
             return employee_response
         
-        # 通常のRAG処理
+        # 軽量版LLM処理（RAG機能なし）
         llm = ChatOpenAI(model_name=ct.MODEL, temperature=ct.TEMPERATURE)
 
-        # 会話履歴なしでもLLMに理解してもらえる、独立した入力テキストを取得するためのプロンプトテンプレートを作成
-        question_generator_template = ct.SYSTEM_PROMPT_CREATE_INDEPENDENT_TEXT
-        question_generator_prompt = ChatPromptTemplate.from_messages([
-            ("system", question_generator_template),
-            MessagesPlaceholder("chat_history"),
-            ("human", "{input}")
-        ])
-
-        # モードによってLLMから回答を取得する用のプロンプトを変更
-        try:
-            current_mode = st.session_state.mode if hasattr(st, 'session_state') and hasattr(st.session_state, 'mode') else ct.ANSWER_MODE_2
-        except Exception:
-            current_mode = ct.ANSWER_MODE_2
-
-        if current_mode == ct.ANSWER_MODE_1:
-            question_answer_template = ct.SYSTEM_PROMPT_DOC_SEARCH
-        else:
-            question_answer_template = ct.SYSTEM_PROMPT_INQUIRY
-
-        question_answer_prompt = ChatPromptTemplate.from_messages([
-            ("system", question_answer_template),
-            MessagesPlaceholder("chat_history"),
-            ("human", "{input}")
-        ])
-
-        # リトリーバーを取得（軽量版：ベクトルストア問題を回避）
-        try:
-            retriever = st.session_state.retriever if hasattr(st, 'session_state') and hasattr(st.session_state, 'retriever') else None
-        except Exception:
-            retriever = None
-
-        if retriever is None:
-            try:
-                from initialize import initialize_retriever
-                retriever = initialize_retriever()
-            except Exception:
-                # ベクトルストア初期化に失敗した場合は基本的なLLM応答のみ
-                return {
-                    "answer": "申し訳ございませんが、現在文書検索機能が利用できません。従業員情報の検索は可能です。",
-                    "context": []
-                }
-
-        if retriever is None:
-            # リトリーバーなしの場合の基本応答
-            return {
-                "answer": "申し訳ございませんが、現在文書検索機能が利用できません。従業員情報の検索は可能です。",
-                "context": []
-            }
-
-        history_aware_retriever = create_history_aware_retriever(llm, retriever, question_generator_prompt)
-
-        question_answer_chain = create_stuff_documents_chain(llm, question_answer_prompt)
-        chain = create_retrieval_chain(history_aware_retriever, question_answer_chain)
-
-        # チャット履歴を取得
+        # シンプルなプロンプト構築
+        system_prompt = ct.SYSTEM_PROMPT_INQUIRY
+        
         try:
             chat_history = st.session_state.chat_history if hasattr(st, 'session_state') and hasattr(st.session_state, 'chat_history') else []
         except Exception:
             chat_history = []
 
-        # LLMへのリクエストとレスポンス取得
-        llm_response = chain.invoke({"input": chat_message, "chat_history": chat_history})
+        # 会話履歴を含めたメッセージ構築
+        messages = [{"role": "system", "content": system_prompt}]
+        
+        # 過去の会話履歴を追加（最新の5つまで）
+        if chat_history:
+            for i, msg in enumerate(chat_history[-10:]):  # 最新10件
+                if i % 2 == 0:  # 偶数番目はユーザーメッセージ
+                    messages.append({"role": "user", "content": str(msg.content) if hasattr(msg, 'content') else str(msg)})
+                else:  # 奇数番目はアシスタントメッセージ
+                    messages.append({"role": "assistant", "content": str(msg)})
+        
+        # 現在のメッセージを追加
+        messages.append({"role": "user", "content": chat_message})
+
+        # LLM応答取得
+        response = llm.invoke(messages)
 
         # LLMレスポンスを会話履歴に追加
         try:
             if hasattr(st, 'session_state') and hasattr(st.session_state, 'chat_history'):
-                st.session_state.chat_history.extend([HumanMessage(content=chat_message), llm_response["answer"]])
+                st.session_state.chat_history.extend([HumanMessage(content=chat_message), response.content])
         except Exception:
             pass
 
-        return llm_response
+        return {
+            "answer": response.content,
+            "context": []
+        }
 
     except Exception as e:
         error_message = f"LLM応答生成中にエラーが発生しました: {str(e)}"

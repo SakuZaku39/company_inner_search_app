@@ -16,8 +16,7 @@ import streamlit as st
 # （自作）画面表示以外の様々な関数が定義されているモジュール
 import utils
 # （自作）アプリ起動時に実行される初期化処理が記述された関数
-from initialize import initialize
-# from initialize_minimal import initialize_minimal as initialize  # テスト用軽量初期化（問題解決後にコメントアウト）
+from initialize_ultra_lite import initialize  # 超軽量版を使用
 # （自作）画面表示系の関数が定義されているモジュール
 import components as cn
 # （自作）変数（定数）がまとめて定義・管理されているモジュール
