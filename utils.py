@@ -30,13 +30,59 @@ load_dotenv()
 ############################################################
 
 def detect_employee_query(query: str) -> bool:
-    """従業員データに関するクエリかどうかを判定"""
-    employee_keywords = [
-        "従業員", "社員", "スタッフ", "人事", "営業", "開発", "経理", "マーケティング",
-        "部長", "課長", "主任", "マネージャー", "リーダー", "チーフ",
-        "人数", "一覧", "名前", "氏名", "職位", "役職", "部署"
+    """従業員データに関するクエリかどうかを判定（厳密版）"""
+    
+    # 文書検索を明確に示すキーワード（従業員情報検索と区別）
+    document_keywords = [
+        "議事録", "MTG", "会議", "ミーティング", "資料", "文書", "ファイル",
+        "方針", "政策", "戦略", "計画", "プロジェクト", "取り組み"
     ]
-    return any(keyword in query for keyword in employee_keywords)
+    
+    # 明確な文書検索キーワードがある場合は従業員検索ではない
+    if any(keyword in query for keyword in document_keywords):
+        return False
+    
+    # 「について」や「に関する」があっても、従業員情報を求める文脈なら従業員検索
+    # 例: "人事部について教えて" → 文書検索、"人事部の従業員について一覧化" → 従業員検索
+    contextual_keywords = ["について", "に関する", "関連", "情報", "内容", "詳細", "説明"]
+    
+    # 従業員関連のキーワードと文脈キーワードの組み合わせをチェック
+    employee_terms = ["従業員", "社員", "スタッフ", "名簿", "一覧"]
+    has_employee_context = any(emp_term in query for emp_term in employee_terms)
+    has_contextual_keyword = any(keyword in query for keyword in contextual_keywords)
+    
+    # 従業員関連の文脈がない場合のみ、文脈キーワードで文書検索と判定
+    if has_contextual_keyword and not has_employee_context:
+        return False
+    
+    # 従業員情報を明確に求めるキーワード（より厳密に）
+    employee_direct_keywords = [
+        "従業員一覧", "社員一覧", "スタッフ一覧", "人事部一覧", "営業部一覧", 
+        "開発部一覧", "経理部一覧", "マーケティング部一覧",
+        "従業員名簿", "社員名簿", "名簿",
+        "人数", "何人", "何名"
+    ]
+    
+    # 従業員情報 + 動作の組み合わせ（一覧化、表示、抽出など）  
+    employee_action_patterns = [
+        "従業員.*一覧", "社員.*一覧", "スタッフ.*一覧",
+        "従業員.*表示", "社員.*表示", "スタッフ.*表示",
+        "従業員.*抽出", "社員.*抽出", "スタッフ.*抽出",
+        "従業員情報.*一覧化", "社員情報.*一覧化", "スタッフ情報.*一覧化",
+        "人事部.*従業員", "営業部.*従業員", "開発部.*従業員", "経理部.*従業員", "マーケティング部.*従業員",
+        "人事部.*社員", "営業部.*社員", "開発部.*社員", "経理部.*社員", "マーケティング部.*社員",
+        ".*部.*所属.*従業員", ".*部.*所属.*社員", ".*部.*所属.*スタッフ",
+        ".*従業員情報.*一覧", ".*社員情報.*一覧", ".*スタッフ情報.*一覧"
+    ]
+    
+    # 明確な従業員検索キーワードがあるかチェック
+    has_direct_keyword = any(keyword in query for keyword in employee_direct_keywords)
+    
+    # 従業員と動作の組み合わせパターンがあるかチェック
+    import re
+    has_employee_action = any(re.search(pattern, query) for pattern in employee_action_patterns)
+    
+    return has_direct_keyword or has_employee_action
 
 def simple_employee_search(query: str) -> dict:
     """シンプルな従業員検索（Pandas Agentを使わない版）"""
