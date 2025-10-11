@@ -1,0 +1,10 @@
+{
+    "python-envs.pythonProjects": [
+        {
+            "path": "",
+            "envManager": "ms-python.python:venv",
+            "packageManager": "ms-python.python:pip"
+        }
+    ],
+    "python.pythonPath": "C:\\Users\\zakku\\OneDrive\\Desktop\\company_inner_search_app\\env\\Scripts\\python.exe"
+}
